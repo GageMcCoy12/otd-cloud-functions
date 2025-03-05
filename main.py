@@ -5,6 +5,7 @@ from typing import Dict, List, Any
 import requests
 
 def main(context):
+    context.log(context)
     # Print raw request data without assuming format
     context.log("==== RAW REQUEST DATA ====")
     context.log(f"Context object type: {type(context)}")
