@@ -37,9 +37,6 @@ def main(context):
     if hasattr(context.req, 'path'):
         context.log(f"Path: {repr(context.req.path)}")
     
-    if hasattr(context.req, 'payload'):
-        context.log(f"Payload: {repr(context.req.payload)}")
-    
     context.log("====================================")
     
     # Get OpenAI API key from environment variables
@@ -54,42 +51,35 @@ def main(context):
         # Try to extract the payload from various possible locations
         payload = None
         
-        # Method 1: Try context.req.body
-        if hasattr(context.req, 'body') and context.req.body:
+        # Method 1: Try context.req.body_json (if it's already parsed)
+        if hasattr(context.req, 'body_json'):
+            try:
+                payload = context.req.body_json
+                context.log("Using context.req.body_json")
+            except Exception as e:
+                context.log(f"Error with body_json: {str(e)}")
+        
+        # Method 2: Try parsing context.req.body as JSON
+        if payload is None and hasattr(context.req, 'body') and context.req.body:
             try:
                 if isinstance(context.req.body, str) and context.req.body.strip():
                     payload = json.loads(context.req.body)
-                else:
+                    context.log("Using parsed context.req.body")
+                elif isinstance(context.req.body, dict):
                     payload = context.req.body
-                context.log("Using context.req.body")
-            except:
-                context.log("context.req.body is not valid JSON")
+                    context.log("Using context.req.body as dict")
+            except Exception as e:
+                context.log(f"Error parsing body: {str(e)}")
         
-        # Method 2: Try context.req.payload
-        if payload is None and hasattr(context.req, 'payload'):
-            try:
-                payload = context.req.payload
-                context.log("Using context.req.payload")
-            except:
-                context.log("Error accessing context.req.payload")
-        
-        # Method 3: Try context.req.query
-        if payload is None and hasattr(context.req, 'query'):
-            try:
-                payload = context.req.query
-                context.log("Using context.req.query")
-            except:
-                context.log("Error accessing context.req.query")
-        
-        # Method 4: Try context.req directly
-        if payload is None:
-            try:
-                # Check if we can get data directly from req
-                if hasattr(context.req, 'message'):
-                    payload = context.req
-                    context.log("Using context.req directly")
-            except:
-                context.log("Error accessing context.req directly")
+        # Method 3: Check if we have a JSON content type but need to parse body_raw
+        if payload is None and hasattr(context.req, 'headers') and hasattr(context.req, 'body_raw'):
+            content_type = context.req.headers.get('content-type', '')
+            if 'application/json' in content_type and context.req.body_raw:
+                try:
+                    payload = json.loads(context.req.body_raw)
+                    context.log("Using parsed context.req.body_raw with JSON content-type")
+                except Exception as e:
+                    context.log(f"Error parsing body_raw: {str(e)}")
         
         # Print what we found
         context.log(f"Final payload type: {type(payload)}")
@@ -112,13 +102,18 @@ def main(context):
                 user_style_preferences = payload.get('user_style_preferences', {})
                 selected_stylebot = payload.get('selected_stylebot', 'lexi')
         
-        # If we couldn't extract a message, try a test response
+        # If we couldn't extract a message, return a helpful response
         if not message:
-            context.log("No message found in payload, returning test response")
+            context.log("No message found in payload, returning help response")
             return {
                 "response": {
-                    "message": "Hello! I'm StyleBot. It seems there was an issue with your request. Could you try sending a message again?",
-                    "conversation_id": str(int(time.time()))
+                    "message": "Hello! I'm StyleBot. It looks like there might be an issue with how you're sending data to me. Please make sure you're sending a POST request with a JSON body containing at least a 'message' field. The content-type should be 'application/json'.",
+                    "conversation_id": str(int(time.time())),
+                    "debug_info": {
+                        "received_content_type": context.req.headers.get('content-type', 'none'),
+                        "body_empty": not bool(context.req.body),
+                        "method": context.req.method
+                    }
                 }
             }
         
