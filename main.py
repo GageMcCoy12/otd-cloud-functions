@@ -1,35 +1,126 @@
 import json
 import os
+import time
 from typing import Dict, List, Any
 import requests
 
-def main(context):
+def main(req, res):
+    # Print raw request data without assuming format
+    print("==== RAW REQUEST DATA ====")
+    print(f"Request object type: {type(req)}")
+    print(f"Request object dir: {dir(req)}")
+    
+    # Print all attributes of the request object
+    for attr in dir(req):
+        if not attr.startswith('__'):
+            try:
+                value = getattr(req, attr)
+                if not callable(value):
+                    print(f"req.{attr} = {repr(value)}")
+            except Exception as e:
+                print(f"Error accessing req.{attr}: {e}")
+    
+    # Try to access common attributes that might contain the payload
+    print("\n==== POTENTIAL PAYLOAD LOCATIONS ====")
+    
+    # Check for raw body/payload
+    if hasattr(req, 'body'):
+        print(f"Raw req.body: {repr(req.body)}")
+    
+    if hasattr(req, 'payload'):
+        print(f"Raw req.payload: {repr(req.payload)}")
+    
+    if hasattr(req, 'data'):
+        print(f"Raw req.data: {repr(req.data)}")
+    
+    if hasattr(req, 'raw'):
+        print(f"Raw req.raw: {repr(req.raw)}")
+    
+    if hasattr(req, 'content'):
+        print(f"Raw req.content: {repr(req.content)}")
+    
+    if hasattr(req, 'text'):
+        print(f"Raw req.text: {repr(req.text)}")
+    
+    print("====================================")
+    
     # Get OpenAI API key from environment variables
     openai_api_key = os.environ.get('OPENAI_API_KEY')
     
     if not openai_api_key:
-        return {
+        return res.json({
             "error": "StyleBot is not properly configured. Please contact support."
-        }
+        }, 500)
     
     try:
-        # Parse the request payload
-        payload = json.loads(context.req.body)
-        message = payload.get('message', '')
-        conversation_history = payload.get('conversation_history', [])
-        user_style_preferences = payload.get('user_style_preferences', {})
-        selected_stylebot = payload.get('selected_stylebot', 'lexi')
+        # Try to extract the payload without assuming format
+        payload = None
+        message = None
+        conversation_history = []
+        user_style_preferences = {}
+        selected_stylebot = 'lexi'
         
+        # Method 1: Try req.body
+        if hasattr(req, 'body'):
+            try:
+                if isinstance(req.body, dict):
+                    payload = req.body
+                elif isinstance(req.body, str):
+                    payload = json.loads(req.body)
+                print("Using req.body")
+            except:
+                print("req.body is not valid JSON or dict")
+        
+        # Method 2: Try req.payload
+        if payload is None and hasattr(req, 'payload'):
+            try:
+                if isinstance(req.payload, dict):
+                    payload = req.payload
+                elif isinstance(req.payload, str):
+                    payload = json.loads(req.payload)
+                print("Using req.payload")
+            except:
+                print("req.payload is not valid JSON or dict")
+        
+        # Method 3: Try req itself
+        if payload is None:
+            try:
+                # Check if req has get method like a dict
+                if hasattr(req, 'get') and callable(getattr(req, 'get')):
+                    payload = req
+                    print("Using req object as payload")
+            except:
+                print("req is not dict-like")
+        
+        # Print what we found
+        print(f"Final payload type: {type(payload)}")
+        if payload:
+            if isinstance(payload, dict):
+                print(f"Payload keys: {list(payload.keys())}")
+            else:
+                print(f"Payload: {repr(payload)}")
+        
+        # Extract data from payload if possible
+        if isinstance(payload, dict):
+            message = payload.get('message', '')
+            conversation_history = payload.get('conversation_history', [])
+            user_style_preferences = payload.get('user_style_preferences', {})
+            selected_stylebot = payload.get('selected_stylebot', 'lexi')
+        
+        # If we couldn't extract a message, return an error
         if not message:
-            return {
-                "error": "Message is required"
-            }
+            return res.json({
+                "error": "Message is required and could not be found in request"
+            }, 400)
         
         # Format conversation history for OpenAI
-        formatted_history = [
-            {"role": "user" if msg.get("isUser") else "assistant", "content": msg.get("text")}
-            for msg in conversation_history
-        ]
+        formatted_history = []
+        for msg in conversation_history:
+            if isinstance(msg, dict):
+                formatted_history.append({
+                    "role": "user" if msg.get("isUser") else "assistant",
+                    "content": msg.get("text", "")
+                })
         
         # Get stylist personality based on selected StyleBot
         stylist_personality = get_stylebot_personality(selected_stylebot)
@@ -66,19 +157,21 @@ def main(context):
         # Extract AI response
         ai_message = response_data['choices'][0]['message']['content']
         
-        # Return response to client
-        return {
+        # Return response to client using Appwrite's res.json()
+        return res.json({
             "response": {
                 "message": ai_message,
                 "conversation_id": str(int(time.time()))
             }
-        }
+        })
         
     except Exception as e:
         print(f"Error processing StyleBot request: {str(e)}")
-        return {
+        import traceback
+        print(traceback.format_exc())
+        return res.json({
             "error": "Sorry, StyleBot is having trouble right now. Please try again in a moment."
-        }
+        }, 500)
 
 def create_system_prompt(user_preferences: Dict, stylist_personality: str) -> str:
     prompt = f"{stylist_personality}\n\n"
