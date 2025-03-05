@@ -6,34 +6,41 @@ import requests
 
 def main(context):
     # Print raw request data without assuming format
-    print("==== RAW REQUEST DATA ====")
-    print(f"Context object type: {type(context)}")
-    print(f"Context object dir: {dir(context)}")
+    context.log("==== RAW REQUEST DATA ====")
+    context.log(f"Context object type: {type(context)}")
     
-    # Print all attributes of the context object
-    for attr in dir(context):
+    # Inspect the req object
+    context.log("\n==== REQ OBJECT INSPECTION ====")
+    context.log(f"req object type: {type(context.req)}")
+    context.log(f"req object dir: {dir(context.req)}")
+    
+    # Print all attributes of the req object
+    for attr in dir(context.req):
         if not attr.startswith('__'):
             try:
-                value = getattr(context, attr)
+                value = getattr(context.req, attr)
                 if not callable(value):
-                    print(f"context.{attr} = {repr(value)}")
+                    context.log(f"context.req.{attr} = {repr(value)}")
             except Exception as e:
-                print(f"Error accessing context.{attr}: {e}")
+                context.log(f"Error accessing context.req.{attr}: {e}")
     
-    # Try to access common attributes that might contain the payload
-    print("\n==== POTENTIAL PAYLOAD LOCATIONS ====")
+    # Check for query params, headers, etc.
+    if hasattr(context.req, 'query'):
+        context.log(f"Query params: {repr(context.req.query)}")
     
-    # Check for raw body/payload in context
-    if hasattr(context, 'req') and hasattr(context.req, 'body'):
-        print(f"Raw context.req.body: {repr(context.req.body)}")
+    if hasattr(context.req, 'headers'):
+        context.log(f"Headers: {repr(context.req.headers)}")
     
-    if hasattr(context, 'body'):
-        print(f"Raw context.body: {repr(context.body)}")
+    if hasattr(context.req, 'method'):
+        context.log(f"HTTP Method: {repr(context.req.method)}")
     
-    if hasattr(context, 'payload'):
-        print(f"Raw context.payload: {repr(context.payload)}")
+    if hasattr(context.req, 'path'):
+        context.log(f"Path: {repr(context.req.path)}")
     
-    print("====================================")
+    if hasattr(context.req, 'payload'):
+        context.log(f"Payload: {repr(context.req.payload)}")
+    
+    context.log("====================================")
     
     # Get OpenAI API key from environment variables
     openai_api_key = os.environ.get('OPENAI_API_KEY')
@@ -44,38 +51,75 @@ def main(context):
         }
     
     try:
-        # Try to extract the payload from context
+        # Try to extract the payload from various possible locations
         payload = None
         
         # Method 1: Try context.req.body
-        if hasattr(context, 'req') and hasattr(context.req, 'body'):
+        if hasattr(context.req, 'body') and context.req.body:
             try:
-                if isinstance(context.req.body, str):
+                if isinstance(context.req.body, str) and context.req.body.strip():
                     payload = json.loads(context.req.body)
                 else:
                     payload = context.req.body
-                print("Using context.req.body")
+                context.log("Using context.req.body")
             except:
-                print("context.req.body is not valid JSON")
+                context.log("context.req.body is not valid JSON")
+        
+        # Method 2: Try context.req.payload
+        if payload is None and hasattr(context.req, 'payload'):
+            try:
+                payload = context.req.payload
+                context.log("Using context.req.payload")
+            except:
+                context.log("Error accessing context.req.payload")
+        
+        # Method 3: Try context.req.query
+        if payload is None and hasattr(context.req, 'query'):
+            try:
+                payload = context.req.query
+                context.log("Using context.req.query")
+            except:
+                context.log("Error accessing context.req.query")
+        
+        # Method 4: Try context.req directly
+        if payload is None:
+            try:
+                # Check if we can get data directly from req
+                if hasattr(context.req, 'message'):
+                    payload = context.req
+                    context.log("Using context.req directly")
+            except:
+                context.log("Error accessing context.req directly")
         
         # Print what we found
-        print(f"Final payload type: {type(payload)}")
+        context.log(f"Final payload type: {type(payload)}")
         if payload:
             if isinstance(payload, dict):
-                print(f"Payload keys: {list(payload.keys())}")
+                context.log(f"Payload keys: {list(payload.keys())}")
             else:
-                print(f"Payload: {repr(payload)}")
+                context.log(f"Payload: {repr(payload)}")
         
         # Extract data from payload
-        message = payload.get('message', '') if payload else ''
-        conversation_history = payload.get('conversation_history', []) if payload else []
-        user_style_preferences = payload.get('user_style_preferences', {}) if payload else {}
-        selected_stylebot = payload.get('selected_stylebot', 'lexi') if payload else 'lexi'
+        message = ''
+        conversation_history = []
+        user_style_preferences = {}
+        selected_stylebot = 'lexi'
         
-        # If we couldn't extract a message, return an error
+        if payload:
+            if isinstance(payload, dict):
+                message = payload.get('message', '')
+                conversation_history = payload.get('conversation_history', [])
+                user_style_preferences = payload.get('user_style_preferences', {})
+                selected_stylebot = payload.get('selected_stylebot', 'lexi')
+        
+        # If we couldn't extract a message, try a test response
         if not message:
+            context.log("No message found in payload, returning test response")
             return {
-                "error": "Message is required and could not be found in request"
+                "response": {
+                    "message": "Hello! I'm StyleBot. It seems there was an issue with your request. Could you try sending a message again?",
+                    "conversation_id": str(int(time.time()))
+                }
             }
         
         # Format conversation history for OpenAI
@@ -131,9 +175,9 @@ def main(context):
         }
         
     except Exception as e:
-        print(f"Error processing StyleBot request: {str(e)}")
+        context.error(f"Error processing StyleBot request: {str(e)}")
         import traceback
-        print(traceback.format_exc())
+        context.error(traceback.format_exc())
         return {
             "error": "Sorry, StyleBot is having trouble right now. Please try again in a moment."
         }
