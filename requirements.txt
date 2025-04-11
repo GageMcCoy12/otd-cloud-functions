@@ -1,2 +1,2 @@
 requests==2.31.0
-sightengine==1.6.0
+sightengine==1.4.0
