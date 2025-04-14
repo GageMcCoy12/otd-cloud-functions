@@ -1,99 +1,67 @@
- from sightengine.client import SightengineClient
+from sightengine.client import SightengineClient
 import base64
 import os
+import re
 import json
-from io import BytesIO
 
 def main(context):
-    # get api keys from environment variables (we'll set these in appwrite)
+    # Retrieve API keys from environment variables
     api_user = os.environ.get('SIGHTENGINE_USER')
     api_secret = os.environ.get('SIGHTENGINE_SECRET')
 
     try:
-        print("DEBUG: Starting content moderation...")
-        
-        # get the base64 image from the request body
-        body_str = context.req.body
-        print(f"DEBUG: Raw body type: {type(body_str)}")
-        print(f"DEBUG: Raw body: {body_str[:100]}...") # print first 100 chars
-        
-        # Parse the body - it's already a string, so we just need to parse it as JSON
-        body = json.loads(body_str)
-        print(f"DEBUG: Parsed body keys: {body.keys()}")
-        
-        image_data = body['image']  # use direct key access since we know it should be there
+        # Parse the JSON body to get the image data
+        data = json.loads(context.req.body)
+        image_data = data.get("image", None)
         if not image_data:
             return context.res.json({
                 'success': False,
-                'message': 'no image provided bestie'
+                'message': 'No image provided.'
             })
-
-        print("DEBUG: Got image data, initializing SightEngine...")
         
-        # Clean up base64 data - remove any prefix if present
-        if ',' in image_data:
-            image_data = image_data.split(',')[1]
+        # Remove data URI header if present (e.g., "data:image/jpeg;base64,")
+        image_data = re.sub(r'^data:image\/\w+;base64,', '', image_data)
         
-        # Ensure padding is correct
-        padding = len(image_data) % 4
-        if padding:
-            image_data += '=' * (4 - padding)
-
-        try:
-            # Decode base64 to binary
-            binary_image = base64.b64decode(image_data)
-            print(f"DEBUG: Successfully decoded base64 data, size: {len(binary_image)} bytes")
-        except Exception as e:
-            print(f"DEBUG: Failed to decode base64: {str(e)}")
+        # Decode the base64 image data to bytes
+        decoded_bytes = base64.b64decode(image_data)
+        
+        # Check if the decoded image bytes are valid (non-empty)
+        if len(decoded_bytes) == 0:
             return context.res.json({
                 'success': False,
-                'message': 'failed to decode image data'
+                'message': 'Decoded image is empty.'
             })
         
-        # init sightengine client
+        # Initialize the SightEngine client
         client = SightengineClient(api_user, api_secret)
-
-        # analyze the image
-        print("DEBUG: Analyzing image with SightEngine...")
-        try:
-            output = client.check('nudity', 'wad', 'offensive').set_bytes(binary_image)
-            print(f"DEBUG: Got SightEngine response: {output}")
-        except Exception as e:
-            print(f"DEBUG: SightEngine API error: {str(e)}")
-            return context.res.json({
-                'success': False,
-                'message': f'SightEngine API error: {str(e)}'
-            })
-
-        # set our thresholds for what we consider safe
-        # SightEngine returns probabilities between 0 and 1
+        
+        # Analyze the image using SightEngine's content moderation
+        output = client.check('nudity', 'wad', 'offensive').set_bytes(decoded_bytes)
+        
+        # Evaluate safety based on defined thresholds
         is_safe = (
-            output.get('nudity', {}).get('raw', 0) < 0.4 and      # low chance of nudity
-            output.get('weapon', 0) < 0.4 and                      # low chance of weapons
-            output.get('drugs', 0) < 0.4 and                       # low chance of drugs
-            output.get('offensive', {}).get('prob', 0) < 0.4       # low chance of offensive content
+            output['nudity']['safe'] > 0.7 and  # high confidence that it's safe
+            output['weapon'] < 0.4 and          # low chance of weapon presence
+            output['drugs'] < 0.4 and           # low chance of drugs present
+            output['offensive']['prob'] < 0.4    # low chance of offensive content
         )
-
-        # detailed response so we know why something was flagged
+        
+        # Prepare detailed response with moderation scores
         response = {
             'success': True,
             'is_safe': is_safe,
             'details': {
-                'nudity': output.get('nudity', {}),
-                'weapon': output.get('weapon', 0),
-                'drugs': output.get('drugs', 0),
-                'offensive': output.get('offensive', {})
+                'nudity_score': output['nudity'],
+                'weapon_score': output['weapon'],
+                'drugs_score': output['drugs'],
+                'offensive_score': output['offensive']
             }
         }
-        print(f"DEBUG: Sending response: {response}")
-
+        
         return context.res.json(response)
 
     except Exception as e:
-        print(f"DEBUG: Error occurred: {str(e)}")
-        import traceback
-        print(f"DEBUG: Full traceback: {traceback.format_exc()}")
         return context.res.json({
             'success': False,
-            'message': f'oof something went wrong: {str(e)}'
-        }) 
+            'message': f'Error: {str(e)}'
+        })
