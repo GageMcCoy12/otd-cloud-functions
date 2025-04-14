@@ -3,16 +3,16 @@ import base64
 import os
 from io import BytesIO
 
-def main(req, res):
+def main(context):
     # get api keys from environment variables (we'll set these in appwrite)
     api_user = os.environ.get('SIGHTENGINE_USER')
     api_secret = os.environ.get('SIGHTENGINE_SECRET')
 
     try:
         # get the base64 image from the request
-        image_data = req.payload.get('image')
+        image_data = context.req.payload.get('image')
         if not image_data:
-            return res.json({
+            return context.res.json({
                 'success': False,
                 'message': 'no image provided bestie'
             })
@@ -43,10 +43,10 @@ def main(req, res):
             }
         }
 
-        return res.json(response)
+        return context.res.json(response)
 
     except Exception as e:
-        return res.json({
+        return context.res.json({
             'success': False,
             'message': f'oof something went wrong: {str(e)}'
-        })
+        }) 
