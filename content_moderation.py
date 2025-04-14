@@ -10,7 +10,7 @@ def main(context):
 
     try:
         # get the base64 image from the request
-        image_data = context.req.payload.get('image')
+        image_data = context.req.body.get('image')
         if not image_data:
             return context.res.json({
                 'success': False,
