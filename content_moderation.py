@@ -40,11 +40,13 @@ def main(context):
         
         # Evaluate safety based on defined thresholds
         is_safe = (
-            output['nudity']['safe'] > 0.7 and  # high confidence that it's safe
-            output['weapon'] < 0.4 and          # low chance of weapon presence
-            output['drugs'] < 0.4 and           # low chance of drugs present
-            output['offensive']['prob'] < 0.4    # low chance of offensive content
+            output['nudity']['raw'] < 0.4 and
+            output['nudity']['partial'] < 0.6 and
+            output['weapon'] < 0.4 and
+            output['drugs'] < 0.4 and
+            output['offensive']['prob'] < 0.4
         )
+
         
         # Prepare detailed response with moderation scores
         response = {
