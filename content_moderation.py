@@ -41,7 +41,7 @@ def main(context):
         # Evaluate safety based on defined thresholds
         is_safe = (
             output['nudity']['raw'] < 0.4 and
-            output['nudity']['partial'] < 0.6 and
+            output['nudity']['partial'] < 0.7 and
             output['weapon'] < 0.4 and
             output['drugs'] < 0.4 and
             output['offensive']['prob'] < 0.4
