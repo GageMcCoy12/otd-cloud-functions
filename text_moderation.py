@@ -20,7 +20,7 @@ def main(context):
         # Build the payload for Sightengine Text API
         payload = {
             'text':      text,
-            'mode':      'rules,ml',                 # combine rule-based + ML
+            'mode':      'standard',                 # standard
             'models':    'profanity,personal',       # comma-separated models
             'lang':      'en,es,pt,fr,it',           # adjust to your supported langs
             'api_user':   api_user,
