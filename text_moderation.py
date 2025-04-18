@@ -58,7 +58,7 @@ def main(context):
             else:
                 # no intensity field? assume a hit is severe
                 score = 1.0
-            if score > 0.7:
+            if score > 0.49:
                 result['is_appropriate'] = False
                 result['reason'] = "Text contains inappropriate content"
                 break
