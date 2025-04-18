@@ -20,6 +20,7 @@ def main(context):
             'text': text,
             'mode': 'standard',               # or 'ml' for the ML models
             'models': 'profanity,personal',   # comma‑separated models
+            'lang': 'en,es,pt,fr,it,ro',
             'api_user': api_user,
             'api_secret': api_secret
         }
